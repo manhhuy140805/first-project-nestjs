@@ -2,10 +2,14 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthDTO } from './dto';
 import * as crypto from 'bcrypt';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class AuthService {
-  constructor(private prismaService: PrismaService) {}
+  constructor(
+    private prismaService: PrismaService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   async register(authDTO: AuthDTO) {
     const hashedPassword = await crypto.hash(authDTO.password, 10);
@@ -39,15 +43,27 @@ export class AuthService {
       },
     });
     if (!user) {
-      throw new ForbiddenException('Email already exists');
+      throw new ForbiddenException('Invalid credentials');
     }
-    const paasswordMatches = await crypto.compare(
+    const passwordMatches = await crypto.compare(
       authDTO.password,
       user.hashPassword,
     );
-    if (!paasswordMatches) {
-      throw new ForbiddenException('Incorrect password');
+    if (!passwordMatches) {
+      throw new ForbiddenException('Invalid credentials');
     }
-    return user;
+    return await this.signTokenJWT(user.id, user.email);
+  }
+
+  async signTokenJWT(
+    userId: number,
+    email: string,
+  ): Promise<{ token: string }> {
+    const payload = { sub: userId, email };
+    const token = await this.jwtService.signAsync(payload, {
+      expiresIn: '1h',
+      secret: process.env['JWT_SECRET'],
+    });
+    return { token };
   }
 }
